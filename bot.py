@@ -4,9 +4,10 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 from threading import Thread
 import asyncio
+from decouple import config
 
 # === ТОКЕН И АДМИН ===
-TOKEN = os.getenv("TOKEN", "8475405331:AAH-kBpTIX6P-f3o3OwUAecniiUYQtZTt1E")
+TOKEN = config("TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "50420118"))
 
 # === КЛАВИАТУРА "ГЛАВНОЕ МЕНЮ" ===
