@@ -93,7 +93,7 @@ if __name__ == "__main__":
     # === ЗАПУСК БОТА В ОТДЕЛЬНОМ ПОТОКЕ ===
     def run_bot():
         asyncio.set_event_loop(asyncio.new_event_loop())
-        application.run_polling()
+        application.run_polling(allowed_updates=[], stop_signals=None)
 
     bot_thread = Thread(target=run_bot)
     bot_thread.start()
