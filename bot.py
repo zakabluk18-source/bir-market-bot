@@ -1,159 +1,120 @@
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import os
-from dotenv import load_dotenv
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 
-# Загружаем переменные из .env
-load_dotenv()
+# === ТОКЕН И АДМИН ===
+TOKEN = "8475405331:AAH-kBpTIX6P-f3o3OwUAecniiUYQtZTt1E"
+ADMIN_ID = 50420118
 
-TOKEN = os.getenv("TOKEN")
-ADMIN_ID = os.getenv("ADMIN_ID")
 
-# === МЕНЮ ===
-def get_main_menu():
+# === ФУНКЦИЯ СТАРТ ===
+def start(update: Update, context):
     keyboard = [
-        ["🍺 Прайсы"],
-        ["📞 Связаться с менеджером"],
-        ["ℹ️ Помощь"]
+        [InlineKeyboardButton("Федеральные компании", callback_data="federal")],
+        [InlineKeyboardButton("Импортное пиво", callback_data="import")],
+        [InlineKeyboardButton("Крафт-пиво", callback_data="craft")],
+        [InlineKeyboardButton("Контакты", callback_data="contacts")]
     ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    update.message.reply_text("Выберите категорию:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-def get_category_menu():
-    keyboard = [
-        ["🍺 Пиво"],
-        ["🍎 Сидр"],
-        ["🥤 Безалкогольные"],
-        ["⚡ Энергетики"],
-        ["🔙 Назад"]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-def get_beer_menu():
-    keyboard = [
-        ["Крупные бренды"],
-        ["Локальные пивоварни"],
-        ["Сезонное пиво"],
-        ["🔙 Назад в Прайсы"]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+# === ОСНОВНОЙ ОБРАБОТЧИК КНОПОК ===
+def button(update: Update, context):
+    query = update.callback_query
+    query.answer()
 
-def get_cider_menu():
-    keyboard = [
-        ["Российский сидр"],
-        ["Импортный сидр"],
-        ["🔙 Назад в Прайсы"]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    if query.data == "federal":
+        keyboard = [
+            [InlineKeyboardButton("🍺 Балтика", callback_data="baltika")],
+            [InlineKeyboardButton("🌍 ABInBev", callback_data="ab_inbev")],
+            [InlineKeyboardButton("🏭 ОПХ", callback_data="oph")],
+            [InlineKeyboardButton("◀️ Назад", callback_data="main_menu")]
+        ]
+        query.edit_message_text("Выберите компанию:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-def get_soft_menu():
-    keyboard = [
-        ["Лимонады"],
-        ["Вода"],
-        ["🔙 Назад в Прайсы"]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    elif query.data == "baltika":
+        with open("prays/baltika.pdf", "rb") as pdf:
+            query.message.reply_document(pdf, caption="Прайс-лист: Балтика")
+        query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
 
-def get_energy_menu():
-    keyboard = [
-        ["Крупные бренды"],
-        ["Локальные/новинки"],
-        ["🔙 Назад в Прайсы"]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    elif query.data == "ab_inbev":
+        with open("prays/ab_inbev.pdf", "rb") as pdf:
+            query.message.reply_document(pdf, caption="Прайс-лист: ABInBev")
+        query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
 
-# === /start ===
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Добро пожаловать в *Бирмаркет НСК* 🍻\n\n"
-        "Выберите действие в меню:",
-        reply_markup=get_main_menu(),
-        parse_mode="Markdown"
-    )
+    elif query.data == "oph":
+        with open("prays/oph.pdf", "rb") as pdf:
+            query.message.reply_document(pdf, caption="Прайс-лист: ОПХ")
+        query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
 
-# === ОБРАБОТКА КНОПОК ===
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    print(f"Нажато: {text}")
+    elif query.data == "import":
+        with open("prays/import.pdf", "rb") as pdf:
+            query.message.reply_document(pdf, caption="Прайс-лист: Импортное пиво")
+        query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
 
-    if text == "🍺 Прайсы":
-        await update.message.reply_text("Выберите категорию:", reply_markup=get_category_menu())
+    elif query.data == "craft":
+        with open("prays/craft.pdf", "rb") as pdf:
+            query.message.reply_document(pdf, caption="Прайс-лист: Крафт-пиво")
+        query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
 
-    elif text == "📞 Связаться с менеджером":
-        try:
-            await context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=f"🔔 Новый запрос на связь!\nОт: {update.effective_user.full_name}\nЮзернейм: @{update.effective_user.username}"
-            )
-        except Exception as e:
-            print(f"Ошибка отправки менеджеру: {e}")
-
-        await update.message.reply_text(
-            "Свяжитесь с менеджером:\n\n"
-            "📱 @your_manager\n"
-            "📞 +7 (913) XXX-XX-XX\n\n"
-            "Мы уже знаем — ответим за 15 минут ⏳"
+    elif query.data == "contacts":
+        query.edit_message_text(
+            "Свяжитесь с нами:\n📞 +7 (999) 123-45-67\n📧 zakabluk18@yandex.ru",
+            reply_markup=main_menu_keyboard()
         )
 
-    elif text == "ℹ️ Помощь":
-        await update.message.reply_text(
-            "ℹ️ *Помощь*\n\n"
-            "Бот помогает:\n"
-            "• Скачать прайсы\n"
-            "• Связаться с менеджером\n\n"
-            "Если что-то не работает — пишите @your_manager",
-            parse_mode="Markdown"
-        )
+    elif query.data == "main_menu":
+        keyboard = [
+            [InlineKeyboardButton("Федеральные компании", callback_data="federal")],
+            [InlineKeyboardButton("Импортное пиво", callback_data="import")],
+            [InlineKeyboardButton("Крафт-пиво", callback_data="craft")],
+            [InlineKeyboardButton("Контакты", callback_data="contacts")]
+        ]
+        query.edit_message_text("Выберите категорию:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif text == "🔙 Назад":
-        await update.message.reply_text("Главное меню:", reply_markup=get_main_menu())
 
-    elif text == "🔙 Назад в Прайсы":
-        await update.message.reply_text("Выберите категорию:", reply_markup=get_category_menu())
+# === КНОПКА "ГЛАВНОЕ МЕНЮ" ===
+def main_menu_keyboard():
+    keyboard = [
+        [InlineKeyboardButton("◀️ Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
 
-    # === Пиво ===
-    elif text == "🍺 Пиво":
-        await update.message.reply_text("Выберите тип:", reply_markup=get_beer_menu())
 
-    elif text == "Крупные бренды":
-        await update.message.reply_document(document=open("files/beer_large.pdf", "rb"))
-    elif text == "Локальные пивоварни":
-        await update.message.reply_document(document=open("files/beer_local.pdf", "rb"))
-    elif text == "Сезонное пиво":
-        await update.message.reply_document(document=open("files/beer_seasonal.pdf", "rb"))
-
-    # === Сидр ===
-    elif text == "🍎 Сидр":
-        await update.message.reply_text("Выберите тип:", reply_markup=get_cider_menu())
-
-    elif text == "Российский сидр":
-        await update.message.reply_document(document=open("files/cider_russia.pdf", "rb"))
-    elif text == "Импортный сидр":
-        await update.message.reply_document(document=open("files/cider_import.pdf", "rb"))
-
-    # === Безалкогольные ===
-    elif text == "🥤 Безалкогольные":
-        await update.message.reply_text("Выберите:", reply_markup=get_soft_menu())
-
-    elif text == "Лимонады":
-        await update.message.reply_document(document=open("files/soft_lemonade.pdf", "rb"))
-    elif text == "Вода":
-        await update.message.reply_document(document=open("files/soft_water.pdf", "rb"))
-
-    # === Энергетики ===
-    elif text == "⚡ Энергетики":
-        await update.message.reply_text("Выберите:", reply_markup=get_energy_menu())
-
-    elif text == "Крупные бренды":
-        await update.message.reply_document(document=open("files/energy_large.pdf", "rb"))
-    elif text == "Локальные/новинки":
-        await update.message.reply_document(document=open("files/energy_new.pdf", "rb"))
-
-# === ЗАПУСК ===
+# === ЗАПУСК БОТА + ВЕБ-СЕРВЕР ДЛЯ RENDER ===
 if __name__ == "__main__":
+    # Создаём приложение
     application = Application.builder().token(TOKEN).build()
 
+    # Добавляем обработчики (только после всех функций!)
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(CallbackQueryHandler(button))
 
-    print("✅ Бот запущен. Нажмите /start в Telegram.")
-    application.run_polling()
+    # Запуск бота в фоне
+    from threading import Thread
+
+    def run_bot():
+        application.run_polling()
+
+    bot_thread = Thread(target=run_bot)
+    bot_thread.start()
+
+    # Веб-сервер, чтобы Render не падал
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+
+    class HealthCheckHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-type", "text/html")
+            self.end_headers()
+            self.wfile.write(b"Bot is alive and running on Render!")
+
+    port = int(os.environ.get("PORT", 8000))
+
+    def run_server():
+        server = HTTPServer(("", port), HealthCheckHandler)
+        print(f"✅ Веб-сервер запущен на порту {port}")
+        server.serve_forever()
+
+    server_thread = Thread(target=run_server)
+    server_thread.start()
