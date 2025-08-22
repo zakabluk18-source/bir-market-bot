@@ -1,27 +1,35 @@
+# bot.py
 import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
+from threading import Thread
+import asyncio
 
 # === ТОКЕН И АДМИН ===
-TOKEN = "8475405331:AAH-kBpTIX6P-f3o3OwUAecniiUYQtZTt1E"
-ADMIN_ID = 50420118
+TOKEN = os.getenv("TOKEN", "8475405331:AAH-kBpTIX6P-f3o3OwUAecniiUYQtZTt1E")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "50420118"))
 
+# === КЛАВИАТУРА "ГЛАВНОЕ МЕНЮ" ===
+def main_menu_keyboard():
+    keyboard = [
+        [InlineKeyboardButton("◀️ Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
 
-# === ФУНКЦИЯ СТАРТ ===
-def start(update: Update, context):
+# === КОМАНДА /start ===
+async def start(update: Update, context):
     keyboard = [
         [InlineKeyboardButton("Федеральные компании", callback_data="federal")],
         [InlineKeyboardButton("Импортное пиво", callback_data="import")],
         [InlineKeyboardButton("Крафт-пиво", callback_data="craft")],
         [InlineKeyboardButton("Контакты", callback_data="contacts")]
     ]
-    update.message.reply_text("Выберите категорию:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text("Выберите категорию:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-
-# === ОСНОВНОЙ ОБРАБОТЧИК КНОПОК ===
-def button(update: Update, context):
+# === ОБРАБОТЧИК КНОПОК ===
+async def button(update: Update, context):
     query = update.callback_query
-    query.answer()
+    await query.answer()
 
     if query.data == "federal":
         keyboard = [
@@ -30,35 +38,35 @@ def button(update: Update, context):
             [InlineKeyboardButton("🏭 ОПХ", callback_data="oph")],
             [InlineKeyboardButton("◀️ Назад", callback_data="main_menu")]
         ]
-        query.edit_message_text("Выберите компанию:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text("Выберите компанию:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif query.data == "baltika":
         with open("prays/baltika.pdf", "rb") as pdf:
-            query.message.reply_document(pdf, caption="Прайс-лист: Балтика")
-        query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
+            await query.message.reply_document(pdf, caption="Прайс-лист: Балтика")
+        await query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
 
     elif query.data == "ab_inbev":
         with open("prays/ab_inbev.pdf", "rb") as pdf:
-            query.message.reply_document(pdf, caption="Прайс-лист: ABInBev")
-        query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
+            await query.message.reply_document(pdf, caption="Прайс-лист: ABInBev")
+        await query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
 
     elif query.data == "oph":
         with open("prays/oph.pdf", "rb") as pdf:
-            query.message.reply_document(pdf, caption="Прайс-лист: ОПХ")
-        query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
+            await query.message.reply_document(pdf, caption="Прайс-лист: ОПХ")
+        await query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
 
     elif query.data == "import":
         with open("prays/import.pdf", "rb") as pdf:
-            query.message.reply_document(pdf, caption="Прайс-лист: Импортное пиво")
-        query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
+            await query.message.reply_document(pdf, caption="Прайс-лист: Импортное пиво")
+        await query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
 
     elif query.data == "craft":
         with open("prays/craft.pdf", "rb") as pdf:
-            query.message.reply_document(pdf, caption="Прайс-лист: Крафт-пиво")
-        query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
+            await query.message.reply_document(pdf, caption="Прайс-лист: Крафт-пиво")
+        await query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
 
     elif query.data == "contacts":
-        query.edit_message_text(
+        await query.edit_message_text(
             "Свяжитесь с нами:\n📞 +7 (999) 123-45-67\n📧 zakabluk18@yandex.ru",
             reply_markup=main_menu_keyboard()
         )
@@ -70,36 +78,27 @@ def button(update: Update, context):
             [InlineKeyboardButton("Крафт-пиво", callback_data="craft")],
             [InlineKeyboardButton("Контакты", callback_data="contacts")]
         ]
-        query.edit_message_text("Выберите категорию:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text("Выберите категорию:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
-# === КНОПКА "ГЛАВНОЕ МЕНЮ" ===
-def main_menu_keyboard():
-    keyboard = [
-        [InlineKeyboardButton("◀️ Главное меню", callback_data="main_menu")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-
-# === ЗАПУСК БОТА + ВЕБ-СЕРВЕР ДЛЯ RENDER ===
+# === ЗАПУСК БОТА И ВЕБ-СЕРВЕР ДЛЯ RENDER ===
 if __name__ == "__main__":
     # Создаём приложение
     application = Application.builder().token(TOKEN).build()
 
-    # Добавляем обработчики (только после всех функций!)
+    # Добавляем обработчики
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button))
 
-    # Запуск бота в фоне
-    from threading import Thread
-
+    # === ЗАПУСК БОТА В ОТДЕЛЬНОМ ПОТОКЕ ===
     def run_bot():
+        asyncio.set_event_loop(asyncio.new_event_loop())
         application.run_polling()
 
     bot_thread = Thread(target=run_bot)
     bot_thread.start()
 
-    # Веб-сервер, чтобы Render не падал
+    # === ВЕБ-СЕРВЕР ДЛЯ RENDER (здоровье сервиса) ===
     from http.server import HTTPServer, BaseHTTPRequestHandler
 
     class HealthCheckHandler(BaseHTTPRequestHandler):
