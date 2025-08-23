@@ -1,3 +1,4 @@
 python-telegram-bot==21.7
 python-dotenv
 python-decouple
+echo Flask==3.0.3 >> requirements.txt
