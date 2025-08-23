@@ -342,27 +342,29 @@ def keep_alive():
     t = Thread(target=run_flask)
     t.start()
 
-# === Запуск бота с автоперезапуском при сбое ===
+# === Запуск бота с защитой от дубля ===
 if __name__ == "__main__":
-    keep_alive()  # Запускаем веб-сервер
+ import sys
+ # Проверим, не запущен ли уже бот
+ if "polling" in sys.modules:
+     print("⚠️ Бот уже запущен — выход")
+     sys.exit(0)
 
-    # Запускаем мониторинг прайсов в фоне
-    monitor_thread = Thread(target=monitor_price_files, daemon=True)
-    monitor_thread.start()
+ keep_alive()  # Запускаем веб-сервер
 
-    # Основной цикл с перезапуском
-    while True:
-        try:
-            # Создаём бота
-            application = Application.builder().token(BOT_TOKEN).build()
+ # Запускаем мониторинг прайсов в фоне
+ monitor_thread = Thread(target=monitor_price_files, daemon=True)
+ monitor_thread.start()
 
-            # Добавляем хендлеры
-            application.add_handler(CommandHandler("start", start))
-            application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+ # Основной цикл с перезапуском
+ while True:
+     try:
+         application = Application.builder().token(BOT_TOKEN).build()
+         application.add_handler(CommandHandler("start", start))
+         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-            # Запускаем бота
-            print("✅ Бот запущен и работает 24/7")
-            application.run_polling()
-        except Exception as e:
-            print(f"❌ Ошибка бота: {e}. Перезапуск через 5 секунд...")
-            time.sleep(5)
+         print("✅ Бот запущен и работает 24/7")
+         application.run_polling(close_loop=False)  # Без автоматического перезапуска
+     except Exception as e:
+         print(f"❌ Ошибка бота: {e}. Перезапуск через 5 секунд...")
+         time.sleep(5)
