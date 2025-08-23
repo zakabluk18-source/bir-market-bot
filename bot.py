@@ -264,14 +264,14 @@ if __name__ == "__main__":
     monitor_thread = Thread(target=monitor_price_files, daemon=True)
     monitor_thread.start()
 
-    # Создаём и запускаем бота
+    # Основной цикл
     while True:
         try:
             app = Application.builder().token(BOT_TOKEN).build()
             app.add_handler(CommandHandler("start", start))
             app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-            # Сохраняем бота для уведомлений
+            # ✅ Сначала — global, потом — присвоение
             global bot_instance
             bot_instance = app.bot
 
@@ -280,3 +280,4 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"❌ Ошибка: {e}. Перезапуск через 5 сек...")
             time.sleep(5)
+
