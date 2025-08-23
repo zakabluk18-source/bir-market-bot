@@ -1,10 +1,11 @@
-# bot.py — Полностью рабочий бот с автообновлением прайсов
+# bot.py — Полностью рабочий бот с автообновлением прайсов и уведомлениями
 
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
 import os
 import time
+import asyncio
 from threading import Thread
 from flask import Flask
 
@@ -23,6 +24,7 @@ current_files = {
     "ab_inbev": None,
     "oph": None
 }
+
 # === Функция: найти самый свежий PDF по ключу (например, "general") ===
 def get_latest_price_file(filename_key):
     try:
@@ -42,6 +44,7 @@ def get_latest_price_file(filename_key):
     except Exception as e:
         print(f"Ошибка поиска прайса для {filename_key}: {e}")
         return None
+
 # === Фоновый мониторинг прайсов ===
 def monitor_price_files():
     global current_files
@@ -63,8 +66,17 @@ def monitor_price_files():
             if latest and latest != current_files[key]:
                 old = current_files[key]
                 current_files[key] = latest
-                print(f"❗ Обновлён прайс: {key} → {latest}")
-                # Здесь можно добавить уведомление в Telegram
+                filename = os.path.basename(latest)
+                print(f"❗ Обновлён прайс: {key} → {filename}")
+                
+                # 📢 Отправляем уведомление в Telegram
+                try:
+                    bot = Bot(token=BOT_TOKEN)
+                    caption = f"🔄 Обновлён прайс: *{key}* → `{filename}`"
+                    asyncio.run(bot.send_message(chat_id=YOUR_USER_ID, text=caption, parse_mode="Markdown"))
+                except Exception as e:
+                    print(f"❌ Не удалось отправить уведомление: {e}")
+
 # === Загрузка токена и ID ===
 load_dotenv()
 
@@ -76,12 +88,12 @@ if not BOT_TOKEN:
 if not YOUR_USER_ID:
     raise ValueError("Не найден YOUR_USER_ID в файле .env")
 
-
 # === Состояния для заявок ===
 STATE_WAITING_NAME = "waiting_name"
 STATE_WAITING_COMPANY = "waiting_company"
 STATE_WAITING_PHONE = "waiting_phone"
 STATE_WAITING_ORDER = "waiting_order"
+
 # === Клавиатуры ===
 def get_main_keyboard():
     keyboard = [
@@ -95,7 +107,6 @@ def get_main_keyboard():
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
 
-
 def get_non_alcohol_keyboard():
     keyboard = [
         [KeyboardButton("💧 Вода")],
@@ -103,13 +114,13 @@ def get_non_alcohol_keyboard():
         [KeyboardButton("◀️ Назад")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
 # === Команда /start ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Здравствуйте Выберите категорию:",
         reply_markup=get_main_keyboard()
     )
-
 
 # === Обработка сообщений ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -168,6 +179,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text("Выберите категорию:", reply_markup=get_main_keyboard())
         context.user_data.clear()
+
     # === Основное меню ===
     elif text == "Федеральные компании":
         keyboard = [
@@ -315,6 +327,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Пожалуйста, используйте кнопки меню.",
             reply_markup=get_main_keyboard()
         )
+
 # === Веб-сервер для Render (Flask) ===
 flask_app = Flask('')
 
@@ -329,8 +342,7 @@ def keep_alive():
     t = Thread(target=run_flask)
     t.start()
 
-
-# === Запуск бота ===
+# === Запуск бота с автоперезапуском при сбое ===
 if __name__ == "__main__":
     keep_alive()  # Запускаем веб-сервер
 
@@ -338,13 +350,19 @@ if __name__ == "__main__":
     monitor_thread = Thread(target=monitor_price_files, daemon=True)
     monitor_thread.start()
 
-    # Создаём бота
-    application = Application.builder().token(BOT_TOKEN).build()
+    # Основной цикл с перезапуском
+    while True:
+        try:
+            # Создаём бота
+            application = Application.builder().token(BOT_TOKEN).build()
 
-    # Добавляем хендлеры
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+            # Добавляем хендлеры
+            application.add_handler(CommandHandler("start", start))
+            application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Запускаем бота
-    print("✅ Бот запущен и работает 24/7")
-    application.run_polling()
+            # Запускаем бота
+            print("✅ Бот запущен и работает 24/7")
+            application.run_polling()
+        except Exception as e:
+            print(f"❌ Ошибка бота: {e}. Перезапуск через 5 секунд...")
+            time.sleep(5)
