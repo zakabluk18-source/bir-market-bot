@@ -235,9 +235,12 @@ if __name__ == "__main__":
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("✅ Бот запущен. Напишите /start в Telegram.")
-    from flask import Flask # pyright: ignore[reportMissingImports]
+    from flask import Flask
 from threading import Thread
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
+# === Веб-сервер для Render ===
 app = Flask('')
 
 @app.route('/')
@@ -251,12 +254,18 @@ def keep_alive():
     t = Thread(target=run)
     t.start()
 
-# Запускаем веб-сервер ДО бота
-keep_alive()
-
-# Запускаем бота
+# === Запуск бота ===
 if __name__ == "__main__":
+    keep_alive()  # Запускаем веб-сервер
+
+    # Создаём бота
     application = Application.builder().token(BOT_TOKEN).build()
-    # ... твои хендлеры ...
+
+    # Добавь свои хендлеры
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # ... добавь остальные, если есть ...
+
+    # Запускаем бота
+    print("✅ Бот запущен и работает 24/7")
     application.run_polling()
-    app.run_polling()
