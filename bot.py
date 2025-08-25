@@ -1,4 +1,4 @@
-# bot.py — Полностью рабочий Telegram-бот с автообновлением прайсов
+# bot.py — Полностью исправленный и рабочий Telegram-бот
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -9,25 +9,19 @@ import asyncio
 from threading import Thread
 from flask import Flask
 
-# === Глобальные переменные ===
+# === Глобальные переменные (объявлены здесь, но не присваиваются) ===
 bot_instance = None
 application_instance = None
-loop = None  # Для безопасной отправки сообщений из потока
+loop = None
 
 # === Логирование пользователей ===
 LOG_FILE = "users.txt"
 
 def log_user(update: Update):
     user = update.effective_user
-    # Защита от отсутствия message или date
-    if update.message and update.message.date:
-        time_str = update.message.date.strftime("%Y-%m-%d %H:%M:%S")
-    else:
-        time_str = "неизвестно"
-
+    time_str = update.message.date.strftime("%Y-%m-%d %H:%M:%S") if update.message and update.message.date else "неизвестно"
     username = f"@{user.username}" if user.username else "нет"
     
-    # Записываем в файл
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"{time_str} | ID: {user.id} | username: {username} | full_name: {user.full_name}\n")
     
@@ -41,9 +35,8 @@ def get_user_count():
         return len(lines)
 
 # === Настройки ===
-PRICES_DIR = "prays"  # Папка с прайсами
+PRICES_DIR = "prays"
 
-# Словарь для хранения актуальных файлов
 current_files = {
     "general": None,
     "import": None,
@@ -56,7 +49,6 @@ current_files = {
     "oph": None
 }
 
-# === Найти самый свежий PDF по ключу ===
 def get_latest_price_file(filename_key):
     try:
         if not os.path.exists(PRICES_DIR):
@@ -67,6 +59,7 @@ def get_latest_price_file(filename_key):
             f for f in os.listdir(PRICES_DIR)
             if f.lower().endswith(".pdf") and filename_key.lower() in f.lower()
         ]
+        
         if not files:
             return None
 
@@ -79,9 +72,9 @@ def get_latest_price_file(filename_key):
         print(f"❌ Ошибка поиска прайса для {filename_key}: {e}")
         return None
 
-# === Фоновый мониторинг прайсов ===
+# === Мониторинг прайсов в отдельном потоке ===
 def monitor_price_files():
-    global current_files
+    global bot_instance, loop
     print("✅ Мониторинг прайсов запущен...")
 
     # Инициализация
@@ -92,7 +85,6 @@ def monitor_price_files():
         else:
             print(f"📁 {key}: файл не найден")
 
-    # Каждые 5 минут проверяем обновления
     while True:
         time.sleep(300)  # 5 минут
         for key in current_files:
@@ -102,7 +94,7 @@ def monitor_price_files():
                 filename = os.path.basename(latest)
                 print(f"❗ Обновлён прайс: {key} → {filename}")
 
-                # Отправляем уведомление
+                # Отправка уведомления
                 if bot_instance and loop:
                     try:
                         caption = f"🔄 Обновлён прайс: *{key}* → `{filename}`"
@@ -117,16 +109,16 @@ def monitor_price_files():
                     except Exception as e:
                         print(f"❌ Не удалось отправить уведомление: {e}")
 
-# === Загрузка переменных окружения ===
+# === Загрузка .env ===
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 YOUR_USER_ID = os.getenv("YOUR_USER_ID")
 
 if not BOT_TOKEN:
-    raise ValueError("❌ Не найден BOT_TOKEN в файле .env")
+    raise ValueError("❌ Не найден BOT_TOKEN в .env")
 if not YOUR_USER_ID:
-    raise ValueError("❌ Не найден YOUR_USER_ID в файле .env")
+    raise ValueError("❌ Не найден YOUR_USER_ID в .env")
 
 try:
     YOUR_USER_ID = int(YOUR_USER_ID)
@@ -274,64 +266,45 @@ def home():
     return "Бот работает 🚀"
 
 def run_flask():
-    try:
-        flask_app.run(host='0.0.0.0', port=8080)
-    except Exception as e:
-        print(f"❌ Ошибка Flask: {e}")
+    flask_app.run(host='0.0.0.0', port=8080)
 
 def keep_alive():
     thread = Thread(target=run_flask, daemon=True)
     thread.start()
 
-# === Статистика для админа ===
+# === /admin ===
 async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-
-    if user_id != YOUR_USER_ID:
+    if update.effective_user.id != YOUR_USER_ID:
         await update.message.reply_text("❌ Доступ запрещён.")
         return
 
-    if not os.path.exists(LOG_FILE):
-        await update.message.reply_text("📊 Нет данных — никто ещё не заходил.")
-        return
+    count = get_user_count()
+    await update.message.reply_text(f"📊 Всего пользователей: {count}")
 
-    user_count = get_user_count()
-    with open(LOG_FILE, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-        last_users = lines[-5:]
+# === Главная функция ===
+async def main():
+    global bot_instance, application_instance, loop
 
-    report = f"📈 Статистика бота:\n\n"
-    report += f"👥 Всего пользователей: {user_count}\n\n"
-    report += "🔚 Последние 5:\n"
-    report += "".join(f"• {line.strip()}\n" for line in last_users)
+    application = Application.builder().token(BOT_TOKEN).build()
+    application_instance = application
+    bot_instance = application.bot  # ← Присваиваем ПОСЛЕ global
 
-    await update.message.reply_text(f"<pre>{report}</pre>", parse_mode="HTML")
+    loop = asyncio.get_event_loop()  # ← Получаем текущий цикл
 
-# === Запуск бота ===
-if __name__ == "__main__":
-    global bot_instance, loop
-    bot_instance = None
-    loop = asyncio.get_event_loop_policy().get_event_loop()  # Получаем текущий цикл
+    # Хендлеры
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("admin", admin_stats))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Запускаем веб-сервер
+    # Запуск Flask
     keep_alive()
 
-    # Запускаем мониторинг
-    monitor_thread = Thread(target=monitor_price_files, daemon=True)
-    monitor_thread.start()
+    # Запуск мониторинга прайсов
+    Thread(target=monitor_price_files, daemon=True).start()
 
-    # Основной цикл
-    while True:
-        try:
-            app = Application.builder().token(BOT_TOKEN).build()
-            app.add_handler(CommandHandler("start", start))
-            app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-            app.add_handler(CommandHandler("admin", admin_stats))
+    # Запуск бота
+    print("✅ Бот запущен. Напишите /start в Telegram.")
+    await application.run_polling()
 
-            bot_instance = app.bot  # Сохраняем бота
-            print("✅ Бот запущен и работает 24/7")
-
-            app.run_polling()
-        except Exception as e:
-            print(f"❌ Ошибка: {e}. Перезапуск через 5 сек...")
-            time.sleep(5)
+if __name__ == "__main__":
+    asyncio.run(main())
