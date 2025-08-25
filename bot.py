@@ -8,6 +8,28 @@ import time
 import asyncio
 from threading import Thread
 from flask import Flask
+# === Логирование пользователей ===
+LOG_FILE = "users.txt"
+
+def log_user(update: Update):
+    user = update.effective_user
+    time_str = update.message.date.strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Собираем username, если есть
+    username = f"@{user.username}" if user.username else "нет"
+    
+    # Пишем в файл
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(f"{time_str} | ID: {user.id} | username: {username} | full_name: {user.full_name}\n")
+    
+    print(f"👤 Залогинен пользователь: {user.full_name} (@{username}) — {user.id}")
+
+def get_user_count():
+    if not os.path.exists(LOG_FILE):
+        return 0
+    with open(LOG_FILE, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+        return len(lines)
 
 # === Глобальная переменная для бота (чтобы мониторинг мог отправлять уведомления) ===
 bot_instance = None
@@ -135,10 +157,19 @@ def get_non_alcohol_keyboard():
 
 # === /start ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Логируем пользователя
+    log_user(update)
+    
+    # Считаем общее количество
+    user_count = get_user_count()
+    # Приветственное сообщение
     await update.message.reply_text(
-        "Здравствуйте Выберите категорию:",
+        f"Здравствуйте 👋\n"
+        f"Вы — {user_count}-й посетитель бота.\n\n"
+        "Выберите категорию:",
         reply_markup=get_main_keyboard()
     )
+
 
 # === Обработка сообщений ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -256,6 +287,33 @@ def keep_alive():
     thread.start()
 
 # === Запуск бота ===
+# === Статистика для админа ===
+async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    # Проверяем, это ты?
+    if user_id != YOUR_USER_ID:
+        await update.message.reply_text("❌ Доступ запрещён.")
+        return
+
+    if not os.path.exists(LOG_FILE):
+        await update.message.reply_text("📊 Нет данных — никто ещё не заходил.")
+        return
+
+    user_count = get_user_count()
+
+    # Читаем последние 5 пользователей
+    with open(LOG_FILE, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+        last_users = lines[-5:]  # последние 5
+
+    report = f"📈 Статистика бота:\n\n"
+    report += f"👥 Всего пользователей: {user_count}\n\n"
+    report += "🔚 Последние 5:\n"
+    report += "".join(f"• {line.strip()}\n" for line in last_users)
+
+    await update.message.reply_text(f"<pre>{report}</pre>", parse_mode="HTML")
+
 if __name__ == "__main__":
     # Запускаем веб-сервер
     keep_alive()
@@ -270,6 +328,8 @@ if __name__ == "__main__":
             app = Application.builder().token(BOT_TOKEN).build()
             app.add_handler(CommandHandler("start", start))
             app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+            app.add_handler(CommandHandler("admin", admin_stats))
+
 
             # ✅ Сначала — global, потом — присвоение
             global bot_instance
