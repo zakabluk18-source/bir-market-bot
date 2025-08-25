@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: bir-market-bot
+    runtime: python-3.11.10
+    region: oregon
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
