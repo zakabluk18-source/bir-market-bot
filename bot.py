@@ -8,17 +8,26 @@ import time
 import asyncio
 from threading import Thread
 from flask import Flask
+
+# === Глобальные переменные ===
+bot_instance = None
+application_instance = None
+loop = None  # Для безопасной отправки сообщений из потока
+
 # === Логирование пользователей ===
 LOG_FILE = "users.txt"
 
 def log_user(update: Update):
     user = update.effective_user
-    time_str = update.message.date.strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Собираем username, если есть
+    # Защита от отсутствия message или date
+    if update.message and update.message.date:
+        time_str = update.message.date.strftime("%Y-%m-%d %H:%M:%S")
+    else:
+        time_str = "неизвестно"
+
     username = f"@{user.username}" if user.username else "нет"
     
-    # Пишем в файл
+    # Записываем в файл
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"{time_str} | ID: {user.id} | username: {username} | full_name: {user.full_name}\n")
     
@@ -30,10 +39,6 @@ def get_user_count():
     with open(LOG_FILE, "r", encoding="utf-8") as f:
         lines = f.readlines()
         return len(lines)
-
-# === Глобальная переменная для бота (чтобы мониторинг мог отправлять уведомления) ===
-bot_instance = None
-application_instance = None
 
 # === Настройки ===
 PRICES_DIR = "prays"  # Папка с прайсами
@@ -51,7 +56,7 @@ current_files = {
     "oph": None
 }
 
-# === Найти самый свежий PDF по ключу (например, "general") ===
+# === Найти самый свежий PDF по ключу ===
 def get_latest_price_file(filename_key):
     try:
         if not os.path.exists(PRICES_DIR):
@@ -65,7 +70,6 @@ def get_latest_price_file(filename_key):
         if not files:
             return None
 
-        # Возвращаем файл с самой свежей датой изменения
         latest_file = max(
             files,
             key=lambda f: os.path.getmtime(os.path.join(PRICES_DIR, f))
@@ -75,12 +79,12 @@ def get_latest_price_file(filename_key):
         print(f"❌ Ошибка поиска прайса для {filename_key}: {e}")
         return None
 
-# === Фоновый мониторинг прайсов (запускается в отдельном потоке) ===
+# === Фоновый мониторинг прайсов ===
 def monitor_price_files():
     global current_files
     print("✅ Мониторинг прайсов запущен...")
 
-    # Инициализация: найдём первые файлы
+    # Инициализация
     for key in current_files:
         current_files[key] = get_latest_price_file(key)
         if current_files[key]:
@@ -98,16 +102,17 @@ def monitor_price_files():
                 filename = os.path.basename(latest)
                 print(f"❗ Обновлён прайс: {key} → {filename}")
 
-                # 📢 Отправляем уведомление (если бот готов)
-                if bot_instance:
+                # Отправляем уведомление
+                if bot_instance and loop:
                     try:
                         caption = f"🔄 Обновлён прайс: *{key}* → `{filename}`"
-                        asyncio.run(
+                        asyncio.run_coroutine_threadsafe(
                             bot_instance.send_message(
                                 chat_id=YOUR_USER_ID,
                                 text=caption,
                                 parse_mode="Markdown"
-                            )
+                            ),
+                            loop
                         )
                     except Exception as e:
                         print(f"❌ Не удалось отправить уведомление: {e}")
@@ -157,19 +162,14 @@ def get_non_alcohol_keyboard():
 
 # === /start ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Логируем пользователя
     log_user(update)
-    
-    # Считаем общее количество
     user_count = get_user_count()
-    # Приветственное сообщение
     await update.message.reply_text(
         f"Здравствуйте 👋\n"
         f"Вы — {user_count}-й посетитель бота.\n\n"
         "Выберите категорию:",
         reply_markup=get_main_keyboard()
     )
-
 
 # === Обработка сообщений ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -202,7 +202,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         company = context.user_data.get("company", "Не указано")
         phone = context.user_data.get("phone", "Не указано")
         order = context.user_data.get("order", "Не указано")
-        time_str = update.message.date.strftime("%d.%m.%Y %H:%M")
+        time_str = update.message.date.strftime("%d.%m.%Y %H:%M") if update.message and update.message.date else "неизвестно"
 
         application_text = (
             "🆕 <b>НОВАЯ ЗАЯВКА</b>:\n\n"
@@ -257,9 +257,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Актуальный прайс не найден.")
         await update.message.reply_text("Выберите категорию:", reply_markup=get_main_keyboard())
 
-    # Остальные elif — как у тебя, они правильные
-    # (для краткости не дублирую, но они должны быть)
-
     elif text == "◀️ Назад":
         await update.message.reply_text("Выберите категорию:", reply_markup=get_main_keyboard())
 
@@ -269,7 +266,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_keyboard()
         )
 
-# === Flask для keep-alive на Render ===
+# === Flask для keep-alive ===
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -283,15 +280,13 @@ def run_flask():
         print(f"❌ Ошибка Flask: {e}")
 
 def keep_alive():
-    thread = Thread(target=run_flask)
+    thread = Thread(target=run_flask, daemon=True)
     thread.start()
 
-# === Запуск бота ===
 # === Статистика для админа ===
 async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    # Проверяем, это ты?
     if user_id != YOUR_USER_ID:
         await update.message.reply_text("❌ Доступ запрещён.")
         return
@@ -301,11 +296,9 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user_count = get_user_count()
-
-    # Читаем последние 5 пользователей
     with open(LOG_FILE, "r", encoding="utf-8") as f:
         lines = f.readlines()
-        last_users = lines[-5:]  # последние 5
+        last_users = lines[-5:]
 
     report = f"📈 Статистика бота:\n\n"
     report += f"👥 Всего пользователей: {user_count}\n\n"
@@ -314,11 +307,16 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"<pre>{report}</pre>", parse_mode="HTML")
 
+# === Запуск бота ===
 if __name__ == "__main__":
+    global bot_instance, loop
+    bot_instance = None
+    loop = asyncio.get_event_loop_policy().get_event_loop()  # Получаем текущий цикл
+
     # Запускаем веб-сервер
     keep_alive()
 
-    # Запускаем мониторинг прайсов в фоне
+    # Запускаем мониторинг
     monitor_thread = Thread(target=monitor_price_files, daemon=True)
     monitor_thread.start()
 
@@ -330,14 +328,10 @@ if __name__ == "__main__":
             app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
             app.add_handler(CommandHandler("admin", admin_stats))
 
-
-            # ✅ Сначала — global, потом — присвоение
-            global bot_instance
-            bot_instance = app.bot
-
+            bot_instance = app.bot  # Сохраняем бота
             print("✅ Бот запущен и работает 24/7")
+
             app.run_polling()
         except Exception as e:
             print(f"❌ Ошибка: {e}. Перезапуск через 5 сек...")
             time.sleep(5)
-
