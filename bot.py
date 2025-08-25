@@ -301,24 +301,34 @@ async def main():
 
     application = Application.builder().token(BOT_TOKEN).build()
     application_instance = application
-    bot_instance = application.bot  # ← Присваиваем ПОСЛЕ global
+    bot_instance = application.bot
+    loop = asyncio.get_event_loop()
 
-    loop = asyncio.get_event_loop()  # ← Получаем текущий цикл
+    # === 📥 ФУНКЦИЯ ЛОГИРОВАНИЯ ОБНОВЛЕНИЙ (обязательно внутри main или сверху) ===
+    async def log_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        print(f"📥 ПРИШЛО ОБНОВЛЕНИЕ: {update.to_dict()}")
 
-    # Хендлеры
+    # Добавляем логгер ПЕРВЫМ (в group=0)
+    application.add_handler(MessageHandler(filters.ALL, log_update), group=0)
+
+    # === 🛠 ХЕНДЛЕРЫ КОМАНД (должны быть ДО общего текстового) ===
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_stats))
+
+    # === ✉️ ОБЩИЙ ОБРАБОТЧИК ТЕКСТА (только после команд!) ===
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Запуск Flask
+    # === 🌐 Запуск Flask (keep-alive) ===
     keep_alive()
 
-    # Запуск мониторинга прайсов
+    # === 🔁 Мониторинг прайсов ===
     Thread(target=monitor_price_files, daemon=True).start()
 
-    # Запуск бота
+    # === 🔧 ОТЛАДКА: проверяем ID админа при запуске ===
+    print(f"🔧 Запуск бота...")
+    print(f"🔧 Админ ID: {YOUR_USER_ID} (тип: {type(YOUR_USER_ID)})")
+    print(f"🔧 BOT_TOKEN: {BOT_TOKEN[:10]}... (загружен)")
+
+    # === 🚀 Запуск бота ===
     print("✅ Бот запущен. Напишите /start в Telegram.")
     await application.run_polling()
-
-if __name__ == "__main__":
-    asyncio.run(main())
