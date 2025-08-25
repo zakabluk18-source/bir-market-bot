@@ -5,14 +5,12 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from dotenv import load_dotenv
 import os
 import time
-import asyncio
 from threading import Thread
 from flask import Flask
 
-# === Глобальные переменные (объявлены здесь, но не присваиваются) ===
+# === Глобальные переменные ===
 bot_instance = None
-application_instance = None
-loop = None
+application_instance = None  # Будет присвоен позже
 
 # === Логирование пользователей ===
 LOG_FILE = "users.txt"
@@ -34,7 +32,7 @@ def get_user_count():
     try:
         with open(LOG_FILE, "r", encoding="utf-8") as f:
             lines = f.readlines()
-            count = len([line for line in lines if line.strip()])  # только непустые
+            count = len([line for line in lines if line.strip()])
             print(f"📊 Найдено пользователей: {count}")
             return count
     except Exception as e:
@@ -81,7 +79,7 @@ def get_latest_price_file(filename_key):
 
 # === Мониторинг прайсов в отдельном потоке ===
 def monitor_price_files():
-    global bot_instance, loop
+    global bot_instance, application_instance
     print("✅ Мониторинг прайсов запущен...")
 
     # Инициализация
@@ -102,7 +100,7 @@ def monitor_price_files():
                 print(f"❗ Обновлён прайс: {key} → {filename}")
 
                 # Отправка уведомления
-                if bot_instance and loop:
+                if bot_instance and application_instance:
                     try:
                         caption = f"🔄 Обновлён прайс: *{key}* → `{filename}`"
                         asyncio.run_coroutine_threadsafe(
@@ -111,7 +109,7 @@ def monitor_price_files():
                                 text=caption,
                                 parse_mode="Markdown"
                             ),
-                            loop
+                            application_instance.loop  # ✅ Правильно: используем loop из application
                         )
                     except Exception as e:
                         print(f"❌ Не удалось отправить уведомление: {e}")
@@ -297,38 +295,37 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # === Главная функция ===
 async def main():
-    global bot_instance, application_instance, loop
+    global bot_instance, application_instance
 
     application = Application.builder().token(BOT_TOKEN).build()
     application_instance = application
     bot_instance = application.bot
-    loop = asyncio.get_event_loop()
 
-    # === 📥 ФУНКЦИЯ ЛОГИРОВАНИЯ ОБНОВЛЕНИЙ (обязательно внутри main или сверху) ===
+    # === ЛОГГЕР: ловим всё первым ===
     async def log_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"📥 ПРИШЛО ОБНОВЛЕНИЕ: {update.to_dict()}")
 
-    # Добавляем логгер ПЕРВЫМ (в group=0)
     application.add_handler(MessageHandler(filters.ALL, log_update), group=0)
 
-    # === 🛠 ХЕНДЛЕРЫ КОМАНД (должны быть ДО общего текстового) ===
+    # === ХЕНДЛЕРЫ ===
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_stats))
-
-    # === ✉️ ОБЩИЙ ОБРАБОТЧИК ТЕКСТА (только после команд!) ===
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # === 🌐 Запуск Flask (keep-alive) ===
+    # === Запуск Flask и мониторинга ===
     keep_alive()
-
-    # === 🔁 Мониторинг прайсов ===
     Thread(target=monitor_price_files, daemon=True).start()
 
-    # === 🔧 ОТЛАДКА: проверяем ID админа при запуске ===
+    # === Отладка ===
     print(f"🔧 Запуск бота...")
     print(f"🔧 Админ ID: {YOUR_USER_ID} (тип: {type(YOUR_USER_ID)})")
     print(f"🔧 BOT_TOKEN: {BOT_TOKEN[:10]}... (загружен)")
-
-    # === 🚀 Запуск бота ===
     print("✅ Бот запущен. Напишите /start в Telegram.")
+
+    # === Запуск ===
     await application.run_polling()
+
+# === Запуск ===
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
