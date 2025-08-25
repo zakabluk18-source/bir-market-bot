@@ -326,6 +326,39 @@ async def main():
     await application.run_polling()
 
 # === Запуск ===
-if __name__ == "__main__":
+if __name__ == '__main__':
+    # Запуск Flask в отдельном потоке
+    from threading import Thread
+    from flask import Flask
+    import time
+
+    app = Flask(__name__)
+
+    @app.route('/')
+    def home():
+        return "Бот работает!"
+
+    def run_flask():
+        app.run(host='0.0.0.0', port=8080, debug=False, use_reloader=False)
+
+    # Запускаем Flask в фоне
+    flask_thread = Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+
+    # Даём Flask стартовать
+    time.sleep(1)
+
+    # Запускаем бота без asyncio.run()
     import asyncio
-    asyncio.run(main())
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        loop.close()
