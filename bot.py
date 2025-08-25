@@ -29,10 +29,17 @@ def log_user(update: Update):
 
 def get_user_count():
     if not os.path.exists(LOG_FILE):
+        print(f"🟡 Файл логов не найден: {LOG_FILE}")
         return 0
-    with open(LOG_FILE, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-        return len(lines)
+    try:
+        with open(LOG_FILE, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            count = len([line for line in lines if line.strip()])  # только непустые
+            print(f"📊 Найдено пользователей: {count}")
+            return count
+    except Exception as e:
+        print(f"❌ Ошибка чтения users.txt: {e}")
+        return 0
 
 # === Настройки ===
 PRICES_DIR = "prays"
@@ -274,11 +281,18 @@ def keep_alive():
 
 # === /admin ===
 async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != YOUR_USER_ID:
+    user_id = update.effective_user.id
+    print(f"🔹 /admin вызван пользователем: {user_id}")
+    print(f"🔹 Ожидаемый ID админа: {YOUR_USER_ID}")
+    print(f"🔹 Тип user_id: {type(user_id)}, тип YOUR_USER_ID: {type(YOUR_USER_ID)}")
+
+    if user_id != YOUR_USER_ID:
+        print("❌ Доступ запрещён: ID не совпадает")
         await update.message.reply_text("❌ Доступ запрещён.")
         return
 
     count = get_user_count()
+    print(f"📊 Отправляем статистику: {count} пользователей")
     await update.message.reply_text(f"📊 Всего пользователей: {count}")
 
 # === Главная функция ===
